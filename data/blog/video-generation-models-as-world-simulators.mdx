@@ -1,0 +1,159 @@
+---
+title: Video generation models as world simulators
+date: '2024-02-10'
+tags: ['guide', 'OpenAI']
+draft: false
+summary: scaling video generation models is a promising path towards building general purpose simulators of the physical world.
+authors: ['openai']
+---
+
+This technical report focuses on our method for turning visual data of all types into a unified representation that enables large-scale training of generative models, and (2) qualitative evaluation of Sora’s capabilities and limitations. Model and implementation details are not included in this report.
+
+Much prior work has studied generative modeling of video data using a variety of methods, including recurrent networks, generative adversarial networks, autoregressive transformers, and diffusion models. These works often focus on a narrow category of visual data, on shorter videos, or on videos of a fixed size. Sora is a generalist model of visual data—it can generate videos and images spanning diverse durations, aspect ratios and resolutions, up to a full minute of high definition video.
+
+## Turning visual data into patches
+
+We take inspiration from large language models which acquire generalist capabilities by training on internet-scale data. The success of the LLM paradigm is enabled in part by the use of tokens that elegantly unify diverse modalities of text—code, math and various natural languages. In this work, we consider how generative models of visual data can inherit such benefits. Whereas LLMs have text tokens, Sora has visual patches. Patches have previously been shown to be an effective representation for models of visual data. We find that patches are a highly-scalable and effective representation for training generative models on diverse types of videos and images.
+![](https://images.openai.com/blob/1d2955dd-9d05-4f33-b346-be531d2a7737/figure-patches.png?trim=0,0,0,0&width=3200)
+At a high level, we turn videos into patches by first compressing videos into a lower-dimensional latent space, and subsequently decomposing the representation into spacetime patches.
+
+## Video compression network
+
+We train a network that reduces the dimensionality of visual data. This network takes raw video as input and outputs a latent representation that is compressed both temporally and spatially. Sora is trained on and subsequently generates videos within this compressed latent space. We also train a corresponding decoder model that maps generated latents back to pixel space.
+
+## Spacetime latent patches
+
+Given a compressed input video, we extract a sequence of spacetime patches which act as transformer tokens. This scheme works for images too since images are just videos with a single frame. Our patch-based representation enables Sora to train on videos and images of variable resolutions, durations and aspect ratios. At inference time, we can control the size of generated videos by arranging randomly-initialized patches in an appropriately-sized grid.
+
+## Scaling transformers for video generation
+
+Sora is a diffusion model; given input noisy patches (and conditioning information like text prompts), it’s trained to predict the original “clean” patches. Importantly, Sora is a diffusion transformer. Transformers have demonstrated remarkable scaling properties across a variety of domains, including language modeling, computer vision, and image generation.
+![](https://images.openai.com/blob/aa8b687c-bee5-4d72-a1c8-1350d33c80d3/figure-diffusion.png?trim=0,0,0,0&width=3200)
+
+In this work, we find that diffusion transformers scale effectively as video models as well. Below, we show a comparison of video samples with fixed seeds and inputs as training progresses. Sample quality improves markedly as training compute increases.
+
+<div className="flex">
+  <video
+    className="w-64"
+    src="https://cdn.openai.com/tmp/s/scaling_0.mp4"
+    autoPlay
+    controls
+    loop
+    muted
+    playsinline="true"
+  ></video>
+  <video
+    className="w-64"
+    src="https://cdn.openai.com/tmp/s/scaling_1.mp4"
+    autoPlay
+    controls
+    loop
+    muted
+    playsinline="true"
+  ></video>
+  <video
+    className="w-64"
+    src="https://cdn.openai.com/tmp/s/scaling_2.mp4"
+    autoPlay
+    controls
+    loop
+    muted
+    playsinline="true"
+  ></video>
+</div>
+
+## Variable durations, resolutions, aspect ratios
+
+Past approaches to image and video generation typically resize, crop or trim videos to a standard size—e.g., 4 second videos at 256x256 resolution. We find that instead training on data at its native size provides several benefits.
+
+### Sampling flexibility
+
+Sora can sample widescreen 1920x1080p videos, vertical 1080x1920 videos and everything inbetween. This lets Sora create content for different devices directly at their native aspect ratios. It also lets us quickly prototype content at lower sizes before generating at full resolution—all with the same model.
+
+<div className="flex">
+  <video
+    className="h-[250px] w-64"
+    src="https://cdn.openai.com/tmp/s/sampling_0.mp4"
+    autoPlay
+    controls
+    loop
+    muted
+    playsinline="true"
+  ></video>
+  <video
+    className="h-[250px] w-[350px]"
+    src="https://cdn.openai.com/tmp/s/sampling_1.mp4"
+    autoPlay
+    controls
+    loop
+    muted
+    playsinline="true"
+  ></video>
+  <video
+    className="h-[250px] w-[640px]"
+    src="https://cdn.openai.com/tmp/s/sampling_2.mp4"
+    autoPlay
+    controls
+    loop
+    muted
+    playsinline="true"
+  ></video>
+</div>
+
+### Improved framing and composition
+
+We empirically find that training on videos at their native aspect ratios improves composition and framing. We compare Sora against a version of our model that crops all training videos to be square, which is common practice when training generative models. The model trained on square crops (left) sometimes generates videos where the subject is only partially in view. In comparison, videos from Sora (right) have improved framing.
+
+<div className="flex">
+  <video
+    className="w-64"
+    src="https://cdn.openai.com/tmp/s/sampling_3.mp4"
+    autoPlay
+    controls
+    loop
+    muted
+    playsinline="true"
+  ></video>
+  <video
+    className="w-64"
+    src="https://cdn.openai.com/tmp/s/sampling_4.mp4"
+    autoPlay
+    controls
+    loop
+    muted
+    playsinline="true"
+  ></video>
+</div>
+
+## Language understanding
+
+Training text-to-video generation systems requires a large amount of videos with corresponding text captions. We apply the re-captioning technique introduced in DALL·E 330 to videos. We first train a highly descriptive captioner model and then use it to produce text captions for all videos in our training set. We find that training on highly descriptive video captions improves text fidelity as well as the overall quality of videos.
+
+Similar to DALL·E 3, we also leverage GPT to turn short user prompts into longer detailed captions that are sent to the video model. This enables Sora to generate high quality videos that accurately follow user prompts.
+
+<div>
+
+> a toy robot wearing blue jeans and a white t-shirt taking a pleasant stroll in Antarctica during a
+> colorful festival
+
+> an old man wearing a green dress and a sun hat taking a pleasant stroll in Mumbai, India during a
+> colorful festival
+
+> an old man wearing blue jeans and a white t-shirt taking a pleasant stroll in Mumbai, India during
+> a winter storm
+
+> an old man wearing a green dress and a sun hat taking a pleasant stroll in Mumbai, India during a
+> beautiful sunset
+> ...
+
+</div>
+
+## Prompting with images and videos
+
+All of the results above and in our landing page show text-to-video samples. But Sora can also be prompted with other inputs, such as pre-existing images or video. This capability enables Sora to perform a wide range of image and video editing tasks—creating perfectly looping video, animating static images, extending videos forwards or backwards in time, etc.
+
+### Animating DALL·E images
+
+Sora is capable of generating videos provided an image and prompt as input. Below we show example videos generated based on DALL·E 231 and DALL·E 330 images.
+
+<a href="https://openai.com/research/video-generation-models-as-world-simulators">read more</a>
